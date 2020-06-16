@@ -25,7 +25,7 @@ cycle = 0
 start = 1
 
 # Panels list
-panels = ["P01"] #, "P02", "P03", "P04", "P05", "SM01"]
+panels = ["P01", "P02", "P03", "P04", "P05", "SM01"]
 
 # They need to start listening to panels' channels
 panelsRoots = {
@@ -47,16 +47,67 @@ panelsReputations = {
 }
 
 # Value is in the interval [0, 1], where 0 is the worst case, 1 the best one
-def calculatePanelReputation(grid, panel):
+def calculatePanelReputation(estimated_timeserie, real_timeserie):
+    # Take only samples of real timeserie corresponding with samples of estimated timeserie
+    # (to evaluate two functions with same number of element
 
-    grid_area = 0
-    panel_area = 0
+    # This has the same length of estimated timeserie.
+    reduced_real_timeserie = []
 
-    for i in range(0, len(grid)):
-        grid_area = grid_area + (grid[i]["Grid_Power"] + grid_area[i + 1]["Grid_Power"]) / 2
-        panel_area = panel_area + (panel[i]["Grid_Power"] + panel_area[i + 1]["Grid_Power"]) / 2
+    for element in estimated_timeserie:
+        for real_element in real_timeserie:
+            if (real_element["Time"] == element["Time"]):
+                reduced_real_timeserie.append(real_element)
+                break
 
-    return ((panel_area - grid_area)/(panel_area + grid_area))*0.5 + 0.5
+    area_minimum = 0
+    area_difference = 0
+
+    for i in range(0, len(estimated_timeserie) - 1):
+        # Functions keep order relation in the current and next sample
+        if ((estimated_timeserie[i]["Power"] > reduced_real_timeserie[i]["Power"]) and (
+                estimated_timeserie[i + 1]["Power"] > reduced_real_timeserie[i + 1]["Power"])):
+            area_minimum = area_minimum + (
+                        reduced_real_timeserie[i]["Power"] + reduced_real_timeserie[i + 1]["Power"]) / 2
+            area_difference = area_difference + abs(
+                (estimated_timeserie[i]["Power"] + estimated_timeserie[i + 1]["Power"] -
+                 reduced_real_timeserie[i]["Power"] - reduced_real_timeserie[i]["Power"])) / 2
+
+        elif ((estimated_timeserie[i]["Power"] < reduced_real_timeserie[i]["Power"]) and (
+                estimated_timeserie[i + 1]["Power"] < reduced_real_timeserie[i + 1]["Power"])):
+            area_minimum = area_minimum + (estimated_timeserie[i]["Power"] + estimated_timeserie[i + 1]["Power"]) / 2
+            area_difference = area_difference + abs(
+                (estimated_timeserie[i]["Power"] + estimated_timeserie[i + 1]["Power"] -
+                 reduced_real_timeserie[i]["Power"] - reduced_real_timeserie[i]["Power"])) / 2
+
+        # Functions don't keep order relation in the current and next sample (in example, f1(t1) > f2(t1) but f1(t2) < f2(t2)).
+        # In this case, we calculate the intersect between two segments and calculate area of two triangles that they generate
+        else:
+            # Straight line params (e = estimated, r = real)
+            m_e = float(estimated_timeserie[i + 1]["Power"] - estimated_timeserie[i]["Power"])
+            q_e = estimated_timeserie[i]["Power"] - m_e
+
+            m_r = float(reduced_real_timeserie[i + 1]["Power"] - reduced_real_timeserie[i]["Power"])
+            q_r = reduced_real_timeserie[i]["Power"] - m_r
+
+            if m_e == m_r:
+                m_e = m_e + 0.01
+            intersect = (q_r - q_e) / (m_e - m_r) - 1
+
+            # Sum of 2 triangles
+            area_difference = area_difference + abs(estimated_timeserie[i]["Power"] - reduced_real_timeserie[i]["Power"]) * intersect / 2 + \
+                              abs(estimated_timeserie[i + 1]["Power"] - reduced_real_timeserie[i + 1]["Power"]) * (1 - intersect) / 2
+
+            # Difference between the trapeze with one base equals to the smallest i-th sample and the triangle with base equal to the difference between (i + 1)-th samples
+            if estimated_timeserie[i]["Power"] < reduced_real_timeserie[i]["Power"]:
+                area_minimum = area_minimum + (estimated_timeserie[i]["Power"] + estimated_timeserie[i + 1]["Power"]) / 2 - \
+                               abs(estimated_timeserie[i + 1]["Power"] - reduced_real_timeserie[i + 1]["Power"]) * (1 - intersect) / 2
+            else:
+                area_minimum = area_minimum + (reduced_real_timeserie[i]["Power"] + reduced_real_timeserie[i + 1]["Power"]) / 2 - \
+                               abs(estimated_timeserie[i + 1]["Power"] - reduced_real_timeserie[i + 1]["Power"]) * (1 - intersect) / 2
+        # print("Area minimum = " + str(area_minimum))
+        # print("Area difference = " + str(area_difference))
+    return area_difference / (area_difference + area_minimum)
 
 # This function simultate read of a GPIO pin
 def readState():

@@ -9,16 +9,16 @@ PANEL_ID = 'P01'
 start = 1
 
 # Devices list (included smart meter)
-devices = ["D01"] #, "D02", "D03", "D04", "D05", "SM02"]
+devices = ["D01", "D02", "D03", "D04", "D05", "SM02"]
 
 # They need to start listening to devices' channels
 devicesRoots = {
     "D01": "XIICENUBIQNKIYX99WJGAAXYCIGGMWESPXGZYACAJENHXGRCEZLFFZPLBCXRPGWIZLTSWYVUEPOKUYUSU",
     "D02": "WGVLZDBCMFGCEYA9QRNKVGLA9AZRPUAZAS9OCENFQQGIESVEDVEJNKUQWMOPOTMKTGMM9DAHKYJIVRLWH",
     "D03": "YKDCRHXABZN9NBIHEJCAJUFMGCFUMLIDHQKDBJYURPMRAIGCBCBYVDRMPSIQGRYGHDIS9MBLI9ZPUJEZN",
-    "D04": "Root Panel P04",
+    "D04": "ZZLCBWUMNIDUUVCPESXNRWVQ9R9ANW99WJYNDWTWIJVIJ9LHGTOEXRDIWWQLRZTSTU9FFJALGOOJJPZEZ",
     "D05": "KCNKHCHJTXOIVAOZBQACKHPYF9EWOCY9QYUAOBHO9DDHOPJTGFTXMSHXRGHVLBPDQNRCOHAPSKLVSGKXZ",
-    "SM02": "Smart meter consumed root"
+    "SM02": "MOJUJZPAYCSSFJQFNQ9LNDUGZUXPZYIDWPYJWSHNTVWGJIEKXWCZMSHSTXF9UDONEPRCUNOJZMEXK9KMO"
 }
 
 # Devices reputations (device_id: reputation_value)
@@ -71,10 +71,19 @@ def panelScore(new_estimated, earliest, latest, working, new_device_id):
         # Get free energy from earliest start to earliest start + working time (at first step).
         # The next step get free energy from (earliest start + 1) and (earliest start + 1 + working time), and so on
         # The length does't change, it is always working time seconds.
+        k = 0
         for j in range(i, i + working):
             free_power_sample = productionProfile[j] - consumptionProfile[j]
             # Create json object to pass to calculateDeviceReputation
             free_energy_json.append({"Time": j, "Power": free_power_sample})
+
+            if free_power_sample < 0:
+                free_energy_json.append({"Time": k, "Power": 0})
+
+            else:
+                # Create json object to pass to calculateDeviceReputation
+                free_energy_json.append({"Time": k, "Power": free_power_sample})
+            k = k + 1
 
         # Check if current score is the best, in this case update reputation and starting time
         temp_score = calculateDeviceReputation(new_estimated, free_energy_json)
@@ -84,7 +93,7 @@ def panelScore(new_estimated, earliest, latest, working, new_device_id):
 
     # 2. Function shift removing one device a time, if its reputation is lower than new one end device doesn't started yet (same concet of the previous steps)
     for key in busyPower:
-        if (devicesReputations[key] < devicesReputations[new_device_id]) and (busyPower[key]["State"] == "ACCEPTED" or busyPower[key]["State"] != "STARTED"):
+        if (devicesReputations[key] < devicesReputations[new_device_id]) and busyPower[key]["State"] != "STARTED":
             new_consumption_profile = []
             for sample_power in busyPower[key]["Timeserie"]:
                 new_consumption_profile.append(consumptionProfile[sample_power["Time"]] - sample_power["Power"])
@@ -97,11 +106,20 @@ def panelScore(new_estimated, earliest, latest, working, new_device_id):
                 free_energy_json = []
 
                 # Get free energy from earliest start to earliest start + working time (at first step)
+                k = 0
                 for j in range(i, i + working):
                     # The difference between the previous case is that free_power_sample doesn't contain new_consumption_profile timeserie
                     free_power_sample = productionProfile[j] - consumptionProfile[j] + new_consumption_profile[j]
                     # Create json object to pass to calculateDeviceReputation
-                    free_energy_json.append({"Time": j, "Power": free_power_sample})
+
+                    if free_power_sample < 0:
+                        free_energy_json.append({"Time": k, "Power": 0})
+
+                    else:
+                        # Create json object to pass to calculateDeviceReputation
+                        free_energy_json.append({"Time": k, "Power": free_power_sample})
+
+                    k = k + 1
 
                 # Check if current score is the best, in this case update reputation and starting time
                 temp_score = calculateDeviceReputation(new_estimated, free_energy_json)
